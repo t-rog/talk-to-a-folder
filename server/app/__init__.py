@@ -14,8 +14,8 @@ def create_app():
         methods=['GET', 'POST', 'OPTIONS'],
     )
 
-    from .routes import api, drive
+    from .routes import auth, drive
     app.register_blueprint(drive.bp)
-    app.register_blueprint(api.bp)
+    app.register_blueprint(auth.bp)
 
     return app

@@ -1,10 +1,17 @@
 import { useState, useEffect, useRef, useMemo, FormEvent, KeyboardEvent } from 'react';
 import { FolderData, buildContext, buildSuggestions, summarize } from '../lib/folderData';
 
+interface Source {
+  file_name: string;
+  file_id: string;
+  chunk_index: number;
+}
+
 interface Message {
   role: 'agent' | 'user';
   text: string;
   hint?: boolean;
+  sources?: Source[];
 }
 
 interface Props {
@@ -20,10 +27,15 @@ function openingLine(folder: FolderData, summary: ReturnType<typeof summarize>):
   return `I just finished reading "${folder.label}" — ${folder.files.length} files in total, mostly ${list}. What do you want to know?`;
 }
 
-function Bubble({ role, hint, children }: { role: string; hint?: boolean; children: React.ReactNode }) {
+function Bubble({ role, hint, children, sources }: { role: string; hint?: boolean; sources?: Source[]; children: React.ReactNode }) {
   return (
     <div className={`bubble bubble-${role} ${hint ? 'bubble-hint' : ''}`}>
       <div className="bubble-text">{children}</div>
+      {sources && sources.length > 0 && (
+        <div style={{ fontSize: '0.85em', marginTop: '0.5em', opacity: 0.7 }}>
+          <strong>Sources:</strong> {sources.map((s) => s.file_name).join(', ')}
+        </div>
+      )}
     </div>
   );
 }
@@ -59,10 +71,10 @@ export function Chat({ folder, agentName }: Props) {
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: text, context: folderContext }),
+        body: JSON.stringify({ message: text, context: folderContext, folder_id: folder.folderId }),
       });
       const data = await res.json();
-      setMessages((m) => [...m, { role: 'agent', text: data.reply }]);
+      setMessages((m) => [...m, { role: 'agent', text: data.reply, sources: data.sources }]);
     } catch {
       setMessages((m) => [
         ...m,
@@ -84,7 +96,7 @@ export function Chat({ folder, agentName }: Props) {
     <div className="chat-inner">
       <div className="chat-scroll" ref={scrollRef}>
         {messages.map((m, i) => (
-          <Bubble key={i} role={m.role} hint={m.hint}>{m.text}</Bubble>
+          <Bubble key={i} role={m.role} hint={m.hint} sources={m.sources}>{m.text}</Bubble>
         ))}
         {busy && (
           <Bubble role="agent">

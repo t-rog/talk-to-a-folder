@@ -6,6 +6,9 @@ venv/
 .venv/
 .env
 
+# ChromaDB local store
+chroma_data/
+
 # Node
 node_modules/
 dist/
@@ -14,3 +17,5 @@ dist/
 # Vite
 client/dist/
 client/.vite/
+
+.claude/

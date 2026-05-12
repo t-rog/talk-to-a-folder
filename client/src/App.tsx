@@ -12,9 +12,25 @@ import {
   TweakText,
   useTweaks,
 } from './components/TweaksPanel';
-import { SAMPLE_FOLDERS, FolderData } from './lib/folderData';
+import { SAMPLE_FOLDERS, FolderData, FileEntry } from './lib/folderData';
 
-const GOOGLE_CLIENT_ID = '604215321895-lhqtfskga2a6ri1lkhuqgojuvv3med69.apps.googleusercontent.com';
+interface ApiFile {
+  name: string;
+  mime_type: string;
+  size: number;
+  modified_time: string;
+}
+
+function apiFileToEntry(f: ApiFile): FileEntry {
+  const dotIdx = f.name.lastIndexOf('.');
+  const ext = dotIdx > 0 ? f.name.slice(dotIdx + 1).toLowerCase() : 'file';
+  const sizeMB = (f.size || 0) / (1024 * 1024);
+  const modifiedDate = f.modified_time ? new Date(f.modified_time) : new Date();
+  const modifiedDays = Math.max(0, Math.floor((Date.now() - modifiedDate.getTime()) / (1000 * 60 * 60 * 24)));
+  return { name: f.name, ext, sizeMB, modifiedDays };
+}
+
+const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
 
 const TWEAK_DEFAULTS = {
   theme: 'cream',
@@ -26,9 +42,30 @@ const TWEAK_DEFAULTS = {
 export type Phase = 'empty' | 'scanning' | 'connected';
 
 export interface UserInfo {
+  id: string;
   name: string;
   email: string;
   initials: string;
+}
+
+const FOLDER_STORAGE_PREFIX = 'ttf:folder:';
+
+function loadFolderForUser(userId: string): FolderData | null {
+  try {
+    const raw = localStorage.getItem(FOLDER_STORAGE_PREFIX + userId);
+    return raw ? (JSON.parse(raw) as FolderData) : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveFolderForUser(userId: string, folder: FolderData | null): void {
+  const key = FOLDER_STORAGE_PREFIX + userId;
+  if (folder) {
+    localStorage.setItem(key, JSON.stringify(folder));
+  } else {
+    localStorage.removeItem(key);
+  }
 }
 
 function deriveName(url: string): string {
@@ -49,23 +86,34 @@ function AppInner() {
   const [folder, setFolder] = useState<FolderData | null>(null);
   const [urlInput, setUrlInput] = useState('');
 
-  // Check existing session on mount
+  // Check existing session on mount; restore active folder from localStorage if any
   useEffect(() => {
     fetch('/api/auth/me', { credentials: 'include' })
       .then(async (res) => {
         if (!res.ok) return;
         const data = await res.json();
         if (data.user) {
-          setUser({ name: data.user.name, email: data.user.email, initials: makeInitials(data.user.name) });
+          const u = data.user;
+          setUser({ id: u.id, name: u.name, email: u.email, initials: makeInitials(u.name) });
           setSignedIn(true);
+          const saved = loadFolderForUser(u.id);
+          if (saved) {
+            setFolder(saved);
+            setPhase('connected');
+          }
         }
       })
       .catch(() => {});
   }, []);
 
+  // Persist folder changes to localStorage so refresh restores the active folder.
+  useEffect(() => {
+    if (user?.id) saveFolderForUser(user.id, folder);
+  }, [user, folder]);
+
   const handleGoogleLogin = useGoogleLogin({
     flow: 'auth-code',
-    scope: 'https://www.googleapis.com/auth/drive.metadata.readonly',
+    scope: 'openid email profile https://www.googleapis.com/auth/drive.readonly',
     onSuccess: async ({ code }) => {
       const res = await fetch('/api/auth/google', {
         method: 'POST',
@@ -76,7 +124,7 @@ function AppInner() {
       if (res.ok) {
         const data = await res.json();
         const u = data.user;
-        setUser({ name: u.name, email: u.email, initials: makeInitials(u.name) });
+        setUser({ id: u.id, name: u.name, email: u.email, initials: makeInitials(u.name) });
         setSignedIn(true);
       }
     },
@@ -91,14 +139,44 @@ function AppInner() {
   };
 
   const connect = useCallback((sampleKey: string, customUrl?: string) => {
-    const sample = SAMPLE_FOLDERS[sampleKey] ?? SAMPLE_FOLDERS.marketing;
-    const f = customUrl
-      ? { ...sample, url: customUrl, label: deriveName(customUrl) }
-      : sample;
-    setFolder(f);
-    setPhase('scanning');
-    setTimeout(() => setPhase('connected'), 1600);
-  }, []);
+    if (customUrl) {
+      setFolder({ label: deriveName(customUrl), owner: user?.name || 'You', members: 1, url: customUrl, files: [] });
+      setPhase('scanning');
+
+      fetch('/api/drive/process-folder', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ folder_url: customUrl }),
+      })
+        .then((res) => {
+          if (res.ok) return res.json();
+          throw new Error(`HTTP ${res.status}`);
+        })
+        .then((data) => {
+          console.log('Folder processed:', data);
+          const apiFiles: ApiFile[] = data.files || [];
+          setFolder({
+            label: deriveName(customUrl),
+            owner: user?.name || 'You',
+            members: 1,
+            url: customUrl,
+            files: apiFiles.map(apiFileToEntry),
+            folderId: data.folder_id,
+          });
+          setPhase('connected');
+        })
+        .catch((err) => {
+          console.error('Folder processing failed:', err);
+          setPhase('connected');
+        });
+    } else {
+      // Sample folder — pure mock for demo
+      setFolder(SAMPLE_FOLDERS[sampleKey] ?? SAMPLE_FOLDERS.marketing);
+      setPhase('scanning');
+      setTimeout(() => setPhase('connected'), 1600);
+    }
+  }, [user]);
 
   const disconnect = () => {
     setPhase('empty');

@@ -11,6 +11,7 @@ export interface FolderData {
   members: number;
   url: string;
   files: FileEntry[];
+  folderId?: string;
 }
 
 export interface TypeCategory {
