@@ -1,0 +1,184 @@
+.urlpanel-body {
+  padding: 18px 22px 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  flex: 1;
+  overflow-y: auto;
+}
+
+// ── URL input form ────────────────────────────────────────────────────────────
+.urlpanel-input {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 4px 4px 4px 12px;
+  transition: border-color 0.15s, box-shadow 0.15s;
+
+  &:focus-within {
+    border-color: color-mix(in oklch, var(--accent) 50%, var(--line));
+    box-shadow: 0 0 0 3px color-mix(in oklch, var(--accent) 12%, transparent);
+  }
+
+  span {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--ink-3);
+    white-space: nowrap;
+  }
+
+  input {
+    flex: 1;
+    min-width: 0;
+    background: transparent;
+    border: 0;
+    outline: 0;
+    font: 500 13px var(--font-mono);
+    color: var(--ink);
+    padding: 9px 4px;
+
+    &::placeholder { color: var(--ink-3); font-weight: 400; }
+    &:disabled { opacity: 0.5; }
+  }
+
+  button {
+    appearance: none;
+    border: 0;
+    cursor: pointer;
+    background: var(--ink);
+    color: var(--bg);
+    font: 600 12.5px var(--font-sans);
+    height: 30px;
+    padding: 0 14px;
+    border-radius: 7px;
+    white-space: nowrap;
+
+    &:disabled { opacity: 0.3; cursor: not-allowed; }
+
+    [data-theme="mono"] & { background: var(--accent); color: #1a1814; }
+  }
+}
+
+// ── Sample folders ────────────────────────────────────────────────────────────
+.urlpanel-section-h {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  margin-bottom: 10px;
+}
+
+.urlpanel-samples {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.urlpanel-sample {
+  appearance: none;
+  cursor: pointer;
+  text-align: left;
+  background: transparent;
+  border: 1px solid var(--line-2);
+  border-radius: 8px;
+  padding: 10px 12px;
+  color: var(--ink);
+  transition: border-color 0.12s, background 0.12s;
+
+  &:hover {
+    border-color: color-mix(in oklch, var(--accent) 35%, var(--line));
+    background: var(--bg);
+  }
+
+  &:disabled { opacity: 0.4; cursor: not-allowed; }
+}
+
+.urlpanel-sample-name { font-weight: 500; font-size: 13px; }
+.urlpanel-sample-meta {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-3);
+  margin-top: 2px;
+}
+
+// ── Status indicator ──────────────────────────────────────────────────────────
+.urlpanel-status {
+  margin-top: auto;
+  padding: 12px;
+  background: var(--bg);
+  border: 1px dashed var(--line);
+  border-radius: 10px;
+  font-size: 12.5px;
+  color: var(--ink-2);
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+
+  strong {
+    display: block;
+    font-weight: 600;
+    color: var(--ink);
+    margin-bottom: 2px;
+  }
+
+  span {
+    font-size: 12px;
+    color: var(--ink-3);
+    display: block;
+  }
+
+  code {
+    display: block;
+    font: 11px var(--font-mono);
+    color: var(--ink-3);
+    margin-top: 4px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &[data-state="connected"] {
+    border-style: solid;
+    border-color: color-mix(in oklch, var(--accent) 30%, var(--line));
+    background: color-mix(in oklch, var(--accent-soft) 60%, var(--bg));
+  }
+}
+
+.urlpanel-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ink-3);
+  margin-top: 4px;
+  flex-shrink: 0;
+
+  .urlpanel-status[data-state="connected"] & {
+    background: var(--accent);
+    box-shadow: 0 0 0 3px color-mix(in oklch, var(--accent) 22%, transparent);
+  }
+
+  .urlpanel-status[data-state="scanning"] & {
+    background: var(--accent);
+    animation: pulse 1.4s infinite;
+  }
+}
+
+.urlpanel-disconnect {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  font: 500 11.5px var(--font-sans);
+  color: var(--ink-2);
+  margin-top: 6px;
+  padding: 0;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  display: block;
+
+  &:hover { color: var(--ink); }
+}
