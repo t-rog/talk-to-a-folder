@@ -1,29 +1,9 @@
+import os
 import chromadb
-import uuid
 from typing import List, Dict, Tuple, Optional
 
-client = chromadb.PersistentClient(path='./chroma_data')
+client = chromadb.PersistentClient(path=os.environ.get('CHROMA_PATH', './chroma_data'))
 collection = client.get_or_create_collection(name="my_collection")
-
-
-def add_vector(document: str, metadata: Dict) -> str:
-    """Add a single document chunk to the vector store."""
-    id = str(uuid.uuid4())
-    collection.add(
-        ids=[id],
-        documents=[document],
-        metadatas=[metadata]
-    )
-    return id
-
-
-def query_vector(query: str, n_results: int = 5) -> Dict:
-    """Query the vector store and return results with metadata."""
-    results = collection.query(
-        query_texts=[query],
-        n_results=n_results
-    )
-    return results
 
 
 def query_with_metadata(
@@ -94,22 +74,3 @@ def store_documents(chunks_with_metadata: List[Dict]) -> Dict:
         'chunks_stored': len(ids),
         'ids': ids,
     }
-
-
-if __name__ == "__main__":
-    # Example usage
-    policies = []
-
-    with open("store_policy_samples.txt", "r", encoding="utf-8") as f:
-        policies = f.read().splitlines()
-
-    batch_add_vectors(policies)
-
-    response = query_vector("What perks do Loyalty members get?")
-    
-    for i, query_results in enumerate(response['documents']):
-        print(f"Query: {response['documents'][i]}")
-        for j, doc in enumerate(query_results):
-            print(f"Result {j+1}: {doc} (Metadata: {response['metadatas'][i][j]})")
-
-    

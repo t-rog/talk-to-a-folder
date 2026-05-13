@@ -1,6 +1,6 @@
 import { FormEvent } from 'react';
 import { Phase } from '../App';
-import { FolderData, SAMPLE_FOLDERS, fmtSize } from '../lib/folderData';
+import { FolderData /*, SAMPLE_FOLDERS, fmtSize */ } from '../lib/folderData';
 import './UrlPanel.scss';
 
 interface Props {
@@ -14,7 +14,7 @@ interface Props {
   signedIn: boolean;
 }
 
-export function UrlPanel({ phase, folder, urlInput, setUrlInput, onConnect, onSample, onDisconnect, signedIn }: Props) {
+export function UrlPanel({ phase, folder, urlInput, setUrlInput, onConnect, onSample: _onSample, onDisconnect, signedIn }: Props) {
   const submit = (e: FormEvent) => {
     e.preventDefault();
     if (!urlInput.trim() || !signedIn) return;
@@ -47,6 +47,7 @@ export function UrlPanel({ phase, folder, urlInput, setUrlInput, onConnect, onSa
           </button>
         </form>
 
+        {/* Sample folders UI temporarily disabled. Uncomment to restore demo mode.
         <div>
           <div className="urlpanel-section-h">Sample folders</div>
           <div className="urlpanel-samples">
@@ -68,6 +69,7 @@ export function UrlPanel({ phase, folder, urlInput, setUrlInput, onConnect, onSa
             })}
           </div>
         </div>
+        */}
 
         <div className="urlpanel-status" data-state={statusState}>
           <span className="urlpanel-status-dot" />

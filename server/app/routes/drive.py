@@ -1,4 +1,3 @@
-import os
 import logging
 from flask import Blueprint, request, jsonify, session
 from ..service import drive_service, vector_service
@@ -51,8 +50,3 @@ def process_folder():
     except Exception as e:
         logger.error(f"Error processing folder: {e}")
         return jsonify({'error': str(e)}), 500
-
-
-@bp.route('/test')
-def test():
-    return {'status': 'ok'}

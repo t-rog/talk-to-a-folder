@@ -110,11 +110,11 @@ export const SAMPLE_FOLDERS: Record<string, FolderData> = {
 };
 
 const TYPES: Omit<TypeCategory, 'files' | 'totalMB'>[] = [
-  { id: 'doc',     label: 'Documents',     exts: ['docx', 'doc', 'txt', 'rtf', 'md', 'pages'] },
+  { id: 'doc',     label: 'Documents',     exts: ['docx', 'doc', 'txt', 'rtf', 'md', 'pages', 'gdoc', 'gform'] },
   { id: 'pdf',     label: 'PDFs',          exts: ['pdf'] },
-  { id: 'sheet',   label: 'Spreadsheets',  exts: ['xlsx', 'xls', 'csv', 'numbers', 'tsv'] },
-  { id: 'deck',    label: 'Presentations', exts: ['pptx', 'ppt', 'key'] },
-  { id: 'image',   label: 'Images',        exts: ['jpg', 'jpeg', 'png', 'gif', 'svg', 'webp', 'heic', 'raw'] },
+  { id: 'sheet',   label: 'Spreadsheets',  exts: ['xlsx', 'xls', 'csv', 'numbers', 'tsv', 'gsheet'] },
+  { id: 'deck',    label: 'Presentations', exts: ['pptx', 'ppt', 'key', 'gslides'] },
+  { id: 'image',   label: 'Images',        exts: ['jpg', 'jpeg', 'png', 'gif', 'svg', 'webp', 'heic', 'raw', 'gdraw'] },
   { id: 'video',   label: 'Videos',        exts: ['mp4', 'mov', 'avi', 'mkv', 'webm'] },
   { id: 'audio',   label: 'Audio',         exts: ['mp3', 'wav', 'm4a', 'flac', 'aac'] },
   { id: 'code',    label: 'Code',          exts: ['py', 'ts', 'js', 'jsx', 'tsx', 'go', 'rs', 'sh', 'yaml', 'yml', 'json', 'sql', 'html', 'css'] },

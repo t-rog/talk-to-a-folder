@@ -13,6 +13,7 @@ import {
   useTweaks,
 } from './components/TweaksPanel';
 import { SAMPLE_FOLDERS, FolderData, FileEntry } from './lib/folderData';
+import { apiUrl } from './lib/api';
 
 interface ApiFile {
   name: string;
@@ -21,9 +22,26 @@ interface ApiFile {
   modified_time: string;
 }
 
+// Google's native file types have no extension in their name (just "My Document"),
+// so map them to a recognizable short label by MIME type before falling back to
+// filename parsing.
+const GOOGLE_MIME_EXT: Record<string, string> = {
+  'application/vnd.google-apps.document': 'gdoc',
+  'application/vnd.google-apps.spreadsheet': 'gsheet',
+  'application/vnd.google-apps.presentation': 'gslides',
+  'application/vnd.google-apps.form': 'gform',
+  'application/vnd.google-apps.drawing': 'gdraw',
+};
+
 function apiFileToEntry(f: ApiFile): FileEntry {
-  const dotIdx = f.name.lastIndexOf('.');
-  const ext = dotIdx > 0 ? f.name.slice(dotIdx + 1).toLowerCase() : 'file';
+  const googleExt = GOOGLE_MIME_EXT[f.mime_type];
+  let ext: string;
+  if (googleExt) {
+    ext = googleExt;
+  } else {
+    const dotIdx = f.name.lastIndexOf('.');
+    ext = dotIdx > 0 ? f.name.slice(dotIdx + 1).toLowerCase() : 'file';
+  }
   const sizeMB = (f.size || 0) / (1024 * 1024);
   const modifiedDate = f.modified_time ? new Date(f.modified_time) : new Date();
   const modifiedDays = Math.max(0, Math.floor((Date.now() - modifiedDate.getTime()) / (1000 * 60 * 60 * 24)));
@@ -88,7 +106,7 @@ function AppInner() {
 
   // Check existing session on mount; restore active folder from localStorage if any
   useEffect(() => {
-    fetch('/api/auth/me', { credentials: 'include' })
+    fetch(apiUrl('/api/auth/me'), { credentials: 'include' })
       .then(async (res) => {
         if (!res.ok) return;
         const data = await res.json();
@@ -115,7 +133,7 @@ function AppInner() {
     flow: 'auth-code',
     scope: 'openid email profile https://www.googleapis.com/auth/drive.readonly',
     onSuccess: async ({ code }) => {
-      const res = await fetch('/api/auth/google', {
+      const res = await fetch(apiUrl('/api/auth/google'), {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
@@ -132,7 +150,7 @@ function AppInner() {
   });
 
   const handleSignOut = async () => {
-    await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' }).catch(() => {});
+    await fetch(apiUrl('/api/auth/logout'), { method: 'POST', credentials: 'include' }).catch(() => {});
     setUser(null);
     setSignedIn(false);
     disconnect();
@@ -143,7 +161,7 @@ function AppInner() {
       setFolder({ label: deriveName(customUrl), owner: user?.name || 'You', members: 1, url: customUrl, files: [] });
       setPhase('scanning');
 
-      fetch('/api/drive/process-folder', {
+      fetch(apiUrl('/api/drive/process-folder'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',

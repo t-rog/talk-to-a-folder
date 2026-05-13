@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useMemo, FormEvent, KeyboardEvent } from 'react';
 import { FolderData, buildContext, buildSuggestions, summarize } from '../lib/folderData';
+import { apiUrl } from '../lib/api';
 
 interface Source {
   file_name: string;
@@ -68,8 +69,9 @@ export function Chat({ folder, agentName }: Props) {
     setMessages((m) => [...m, { role: 'user', text }]);
     setBusy(true);
     try {
-      const res = await fetch('/api/chat', {
+      const res = await fetch(apiUrl('/api/chat'), {
         method: 'POST',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: text, context: folderContext, folder_id: folder.folderId }),
       });
