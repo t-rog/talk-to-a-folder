@@ -1,9 +1,34 @@
 import os
 import chromadb
+from chromadb.utils.embedding_functions import VoyageAIEmbeddingFunction
 from typing import List, Dict, Tuple, Optional
 
-client = chromadb.PersistentClient(path=os.environ.get('CHROMA_PATH', './chroma_data'))
-collection = client.get_or_create_collection(name="my_collection")
+# Ensure the ChromaDB data dir exists before instantiating. ChromaDB's Rust
+# layer can fail with EACCES if the subdirectory under a mounted disk hasn't
+# been created yet (common on first deploy to Render with a persistent disk).
+_chroma_path = os.environ.get('CHROMA_PATH', './chroma_data')
+os.makedirs(_chroma_path, exist_ok=True)
+
+# Use Voyage AI for embeddings when VOYAGE_API_KEY is set. Offloads the
+# CPU/memory-heavy embedding work off the Flask server (free tier covers ~50M
+# tokens, far more than this app uses). When unset, ChromaDB falls back to its
+# built-in sentence-transformers embedder — fine for local dev but too slow
+# on small cloud instances.
+_voyage_key = os.environ.get('VOYAGE_API_KEY')
+_embedding_fn = (
+    VoyageAIEmbeddingFunction(
+        api_key=_voyage_key,
+        model_name=os.environ.get('VOYAGE_MODEL', 'voyage-3-lite'),
+    )
+    if _voyage_key
+    else None
+)
+
+client = chromadb.PersistentClient(path=_chroma_path)
+collection = client.get_or_create_collection(
+    name="my_collection",
+    embedding_function=_embedding_fn,
+)
 
 
 def query_with_metadata(

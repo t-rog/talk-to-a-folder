@@ -8,3 +8,4 @@ google-auth
 chromadb
 python-docx>=1.0.0
 gunicorn
+voyageai
