@@ -1,7 +1,12 @@
 import os
+import time
 import chromadb
 from chromadb.utils.embedding_functions import VoyageAIEmbeddingFunction
 from typing import List, Dict, Tuple, Optional
+
+
+def _log(msg: str) -> None:
+    print(f"[vector] {msg}", flush=True)
 
 # Ensure the ChromaDB data dir exists before instantiating. ChromaDB's Rust
 # layer can fail with EACCES if the subdirectory under a mounted disk hasn't
@@ -15,20 +20,20 @@ os.makedirs(_chroma_path, exist_ok=True)
 # built-in sentence-transformers embedder — fine for local dev but too slow
 # on small cloud instances.
 _voyage_key = os.environ.get('VOYAGE_API_KEY')
-_embedding_fn = (
-    VoyageAIEmbeddingFunction(
-        api_key=_voyage_key,
-        model_name=os.environ.get('VOYAGE_MODEL', 'voyage-3-lite'),
-    )
-    if _voyage_key
-    else None
-)
+if _voyage_key:
+    _voyage_model = os.environ.get('VOYAGE_MODEL', 'voyage-3-lite')
+    _embedding_fn = VoyageAIEmbeddingFunction(api_key=_voyage_key, model_name=_voyage_model)
+    _log(f"using Voyage embedder, model={_voyage_model}")
+else:
+    _embedding_fn = None
+    _log("VOYAGE_API_KEY not set — falling back to ChromaDB default embedder (slow)")
 
 client = chromadb.PersistentClient(path=_chroma_path)
 collection = client.get_or_create_collection(
     name="my_collection",
     embedding_function=_embedding_fn,
 )
+_log(f"collection ready at {_chroma_path}")
 
 
 def query_with_metadata(
@@ -56,11 +61,14 @@ def query_with_metadata(
     else:
         where = None
 
+    _log(f"query START, where={where}")
+    t = time.time()
     results = collection.query(
         query_texts=[query],
         n_results=n_results,
         where=where,
     )
+    _log(f"query END, {time.time() - t:.2f}s")
 
     documents = results.get('documents', [[]])[0]
     metadatas = results.get('metadatas', [[]])[0]
@@ -80,11 +88,14 @@ def batch_add_vectors(chunks_with_metadata: List[Dict]) -> List[str]:
     documents = [item['document_text'] for item in chunks_with_metadata]
     metadatas = [item['metadata'] for item in chunks_with_metadata]
 
+    _log(f"upsert START, {len(ids)} chunks")
+    t = time.time()
     collection.upsert(
         ids=ids,
         documents=documents,
         metadatas=metadatas,
     )
+    _log(f"upsert END, {time.time() - t:.2f}s")
     return ids
 
 

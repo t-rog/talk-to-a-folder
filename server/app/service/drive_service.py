@@ -1,5 +1,6 @@
 import os
 import re
+import time
 import tempfile
 import logging
 from typing import Optional, Dict, List, Tuple
@@ -7,6 +8,11 @@ from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload
 from google.oauth2.credentials import Credentials
 from docx import Document
+
+
+def _log(msg: str) -> None:
+    """Force-flushed stdout print so messages survive worker SIGKILL."""
+    print(f"[drive] {msg}", flush=True)
 
 logger = logging.getLogger(__name__)
 
@@ -176,23 +182,25 @@ def process_folder(folder_url_or_id: str, credentials_dict: Dict) -> Dict:
     Returns dict with status, file_count, chunk_count, and list of chunks with metadata.
     """
     try:
+        t0 = time.time()
         folder_id = _extract_folder_id(folder_url_or_id)
-        logger.info(f"Processing folder {folder_id}")
+        _log(f"START process_folder folder_id={folder_id}")
 
         # Get list of files (exclude subfolders)
+        t_list = time.time()
         all_items = get_folder_files(folder_id, credentials_dict)
+        _log(f"list_files took {time.time() - t_list:.2f}s, got {len(all_items)} items")
+
         files = [
             f for f in all_items
             if f.get('mimeType') != 'application/vnd.google-apps.folder'
         ]
-        logger.info(f"Found {len(files)} files in folder {folder_id}")
-
         # Filter to MIME types we can extract directly OR export from Google native
         supported_files = [
             f for f in files
             if f.get('mimeType') in EXTRACTORS or f.get('mimeType') in GOOGLE_EXPORTS
         ]
-        logger.info(f"Found {len(supported_files)} files with supported MIME types")
+        _log(f"{len(files)} files, {len(supported_files)} supported")
 
         all_chunks = []
         processed_count = 0
@@ -201,30 +209,31 @@ def process_folder(folder_url_or_id: str, credentials_dict: Dict) -> Dict:
             file_id = file_info['id']
             file_name = file_info['name']
             mime_type = file_info['mimeType']
-
-            logger.info(f"Processing file: {file_name}")
+            _log(f"FILE start: {file_name} ({mime_type})")
 
             # Download file (exports Google native types to a supported format)
+            t_dl = time.time()
             download_result = download_file(file_id, credentials_dict, mime_type)
+            _log(f"  download took {time.time() - t_dl:.2f}s")
             if not download_result:
-                logger.warning(f"Failed to download {file_name}, skipping")
+                _log(f"  SKIP: download failed")
                 continue
             tmp_path, effective_mime = download_result
 
             try:
                 # Extract text using the effective MIME type (post-export)
+                t_ex = time.time()
                 text = extract_text(tmp_path, effective_mime)
+                _log(f"  extract took {time.time() - t_ex:.2f}s, {len(text)} chars")
                 if not text:
-                    logger.warning(f"No text extracted from {file_name}, skipping")
+                    _log(f"  SKIP: no text")
                     continue
 
-                # Chunk text
                 text_chunks = chunk_text(text)
                 if not text_chunks:
-                    logger.warning(f"No chunks produced from {file_name}, skipping")
+                    _log(f"  SKIP: no chunks")
                     continue
 
-                # Create chunks with metadata
                 for chunk_index, chunk_text_content in enumerate(text_chunks):
                     all_chunks.append({
                         'document_text': chunk_text_content,
@@ -238,7 +247,7 @@ def process_folder(folder_url_or_id: str, credentials_dict: Dict) -> Dict:
                     })
 
                 processed_count += 1
-                logger.info(f"Extracted {len(text_chunks)} chunks from {file_name}")
+                _log(f"  FILE done: {len(text_chunks)} chunks")
 
             finally:
                 # Clean up temp file
@@ -247,10 +256,8 @@ def process_folder(folder_url_or_id: str, credentials_dict: Dict) -> Dict:
                 except Exception as e:
                     logger.warning(f"Failed to clean up temp file {tmp_path}: {e}")
 
-        logger.info(
-            f"Folder processing complete: {processed_count} files processed, "
-            f"{len(all_chunks)} total chunks"
-        )
+        _log(f"END process_folder: {processed_count} files, {len(all_chunks)} chunks, "
+             f"total {time.time() - t0:.2f}s")
 
         return {
             'status': 'success',
