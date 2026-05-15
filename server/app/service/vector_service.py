@@ -107,16 +107,20 @@ def batch_add_vectors(chunks_with_metadata: List[Dict]) -> List[str]:
     documents = [item['document_text'] for item in chunks_with_metadata]
     metadatas = [item['metadata'] for item in chunks_with_metadata]
 
-    _log(f"upsert START, {len(ids)} chunks")
+    _log(f"add START, {len(ids)} chunks")
     t = time.time()
     embeddings = _embed(documents, input_type='document')
-    collection.upsert(
+    # delete-then-add simulates upsert without going through chromadb's upsert
+    # code path (which hangs indefinitely on Render's persistent disk).
+    # collection.delete is a no-op for IDs that don't exist.
+    collection.delete(ids=ids)
+    collection.add(
         ids=ids,
         documents=documents,
         embeddings=embeddings,
         metadatas=metadatas,
     )
-    _log(f"upsert END, {time.time() - t:.2f}s")
+    _log(f"add END, {time.time() - t:.2f}s")
     return ids
 
 
