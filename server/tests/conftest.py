@@ -24,11 +24,22 @@ def fresh_collection(monkeypatch):
     Replace the module-level collection with an isolated in-memory one.
     Uses a unique collection name per test because chromadb.Client() reuses
     cached collection state under the same name across fixture instantiations.
+
+    Also stubs vector_service._embed so tests don't need a real Voyage API
+    key — we're testing filter logic, not embedding quality.
     """
     client = chromadb.Client()
     name = f'test_{uuid.uuid4().hex}'
     collection = client.get_or_create_collection(name=name)
     monkeypatch.setattr(vector_service, 'collection', collection)
+
+    def fake_embed(texts, input_type):
+        # Distinct deterministic vector per text so ChromaDB accepts them as
+        # unique points. Quality doesn't matter — filter logic is what we test.
+        return [[float((hash(t) + i) % 1000) / 1000 for i in range(384)] for t in texts]
+
+    monkeypatch.setattr(vector_service, '_embed', fake_embed)
+
     yield collection
     try:
         client.delete_collection(name=name)
