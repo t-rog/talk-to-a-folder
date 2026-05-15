@@ -1,7 +1,7 @@
 import os
 import time
-import chromadb
 import voyageai
+from pinecone import Pinecone
 from typing import List, Dict, Tuple, Optional
 
 
@@ -9,35 +9,29 @@ def _log(msg: str) -> None:
     print(f"[vector] {msg}", flush=True)
 
 
-# Ensure the ChromaDB data dir exists before instantiating. ChromaDB's Rust
-# layer can fail with EACCES if the subdirectory under a mounted disk hasn't
-# been created yet (common on first deploy to Render with a persistent disk).
-_chroma_path = os.environ.get('CHROMA_PATH', './chroma_data')
-os.makedirs(_chroma_path, exist_ok=True)
-
-# We call Voyage directly via its SDK instead of relying on ChromaDB's bundled
-# VoyageAIEmbeddingFunction — that wrapper was hanging indefinitely on upsert
-# in production. By pre-computing embeddings here and passing them to upsert()
-# explicitly, ChromaDB never invokes any embedder of its own.
+# ── Voyage AI (embeddings) ───────────────────────────────────────────────────
 _voyage_key = os.environ.get('VOYAGE_API_KEY')
 _voyage_model = os.environ.get('VOYAGE_MODEL', 'voyage-3-lite')
 
-if not _voyage_key:
-    _log("WARNING: VOYAGE_API_KEY not set — embedding calls will fail")
-    _voyage = None
-else:
+if _voyage_key:
     _voyage = voyageai.Client(api_key=_voyage_key)
     _log(f"voyage client ready, model={_voyage_model}")
+else:
+    _voyage = None
+    _log("WARNING: VOYAGE_API_KEY not set — embedding calls will fail")
 
-client = chromadb.PersistentClient(
-    path=_chroma_path,
-    settings=chromadb.Settings(anonymized_telemetry=False),
-)
-# Bumped the name to force a fresh collection — the previous "my_collection"
-# was created with a stored embedder reference that put ChromaDB into a bad
-# state. No embedding_function passed; we supply embeddings ourselves.
-collection = client.get_or_create_collection(name="documents_v2")
-_log(f"collection ready at {_chroma_path}")
+
+# ── Pinecone (vector store) ──────────────────────────────────────────────────
+_pinecone_key = os.environ.get('PINECONE_API_KEY')
+_pinecone_index_name = os.environ.get('PINECONE_INDEX')
+
+if _pinecone_key and _pinecone_index_name:
+    _pc = Pinecone(api_key=_pinecone_key)
+    _index = _pc.Index(_pinecone_index_name)
+    _log(f"pinecone index ready: {_pinecone_index_name}")
+else:
+    _index = None
+    _log("WARNING: PINECONE_API_KEY or PINECONE_INDEX not set — vector ops will fail")
 
 
 def _embed(texts: List[str], input_type: str) -> List[List[float]]:
@@ -65,62 +59,66 @@ def query_with_metadata(
     omitted, the query is unscoped (use only for trusted internal callers).
     `folder_id` further narrows to a single folder within the user's chunks.
     """
-    filters = []
+    if _index is None:
+        raise RuntimeError("Pinecone is not configured")
+
+    # Pinecone implicitly ANDs top-level filter keys
+    pinecone_filter: Dict[str, str] = {}
     if user_id:
-        filters.append({'user_id': user_id})
+        pinecone_filter['user_id'] = user_id
     if folder_id:
-        filters.append({'folder_id': folder_id})
+        pinecone_filter['folder_id'] = folder_id
 
-    if len(filters) > 1:
-        where = {'$and': filters}
-    elif filters:
-        where = filters[0]
-    else:
-        where = None
-
-    _log(f"query START, where={where}")
+    _log(f"query START, filter={pinecone_filter}")
     t = time.time()
     query_embedding = _embed([query], input_type='query')[0]
-    results = collection.query(
-        query_embeddings=[query_embedding],
-        n_results=n_results,
-        where=where,
+    result = _index.query(
+        vector=query_embedding,
+        top_k=n_results,
+        filter=pinecone_filter if pinecone_filter else None,
+        include_metadata=True,
     )
-    _log(f"query END, {time.time() - t:.2f}s")
+    _log(f"query END, {time.time() - t:.2f}s, {len(result.matches)} matches")
 
-    documents = results.get('documents', [[]])[0]
-    metadatas = results.get('metadatas', [[]])[0]
-
-    return list(zip(documents, metadatas))
+    pairs: List[Tuple[str, Dict]] = []
+    for match in result.matches:
+        meta = dict(match.metadata or {})
+        text = meta.pop('text', '')
+        pairs.append((text, meta))
+    return pairs
 
 
 def batch_add_vectors(chunks_with_metadata: List[Dict]) -> List[str]:
     """
-    Upsert document chunks. IDs are deterministic ({user_id}:{file_id}:{chunk_index})
-    so re-processing a folder overwrites existing chunks instead of duplicating them.
-    Embeddings are computed via Voyage SDK and passed in explicitly.
+    Upsert document chunks into Pinecone. IDs are deterministic
+    ({user_id}:{file_id}:{chunk_index}) so re-processing a folder overwrites
+    existing chunks instead of duplicating them. The chunk text is stored in
+    Pinecone metadata under the `text` key so it's returned at query time.
     """
-    ids = [
-        f"{item['metadata']['user_id']}:{item['metadata']['file_id']}:{item['metadata']['chunk_index']}"
-        for item in chunks_with_metadata
-    ]
-    documents = [item['document_text'] for item in chunks_with_metadata]
-    metadatas = [item['metadata'] for item in chunks_with_metadata]
+    if _index is None:
+        raise RuntimeError("Pinecone is not configured")
 
-    _log(f"add START, {len(ids)} chunks")
+    documents = [item['document_text'] for item in chunks_with_metadata]
+
+    _log(f"upsert START, {len(chunks_with_metadata)} chunks")
     t = time.time()
     embeddings = _embed(documents, input_type='document')
-    # delete-then-add simulates upsert without going through chromadb's upsert
-    # code path (which hangs indefinitely on Render's persistent disk).
-    # collection.delete is a no-op for IDs that don't exist.
-    collection.delete(ids=ids)
-    collection.add(
-        ids=ids,
-        documents=documents,
-        embeddings=embeddings,
-        metadatas=metadatas,
-    )
-    _log(f"add END, {time.time() - t:.2f}s")
+
+    vectors = []
+    ids = []
+    for item, embedding in zip(chunks_with_metadata, embeddings):
+        meta = dict(item['metadata'])
+        vec_id = f"{meta['user_id']}:{meta['file_id']}:{meta['chunk_index']}"
+        ids.append(vec_id)
+        meta['text'] = item['document_text']
+        vectors.append({
+            'id': vec_id,
+            'values': embedding,
+            'metadata': meta,
+        })
+
+    _index.upsert(vectors=vectors)
+    _log(f"upsert END, {time.time() - t:.2f}s")
     return ids
 
 

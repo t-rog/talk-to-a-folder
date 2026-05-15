@@ -5,7 +5,7 @@ anthropic
 google-auth-oauthlib
 google-api-python-client
 google-auth
-chromadb
+pinecone
 python-docx>=1.0.0
 gunicorn
 voyageai

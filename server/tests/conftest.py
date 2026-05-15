@@ -1,50 +1,73 @@
 """
 Shared test setup.
 
-The vector_service module instantiates a PersistentClient at import time, so we
-redirect it at a throwaway temp dir before any test code imports it. Each test
-then receives a fresh in-memory ChromaDB collection via the `fresh_collection`
-fixture — fast, hermetic, no cross-test contamination.
+vector_service initializes a real Pinecone client at import time if
+PINECONE_API_KEY is set. To keep tests hermetic, the `fresh_collection`
+fixture swaps in an in-memory FakeIndex that mirrors Pinecone's API surface
+for upsert / query / delete with simple dict storage.
 """
-import os
-import tempfile
-import uuid
+from types import SimpleNamespace
+from typing import Dict, List
 
-# Must run before any `from app.service import vector_service` import.
-os.environ.setdefault('CHROMA_PATH', tempfile.mkdtemp(prefix='chroma_test_'))
-
-import chromadb
 import pytest
 from app.service import vector_service
+
+
+class FakeIndex:
+    """Tiny in-memory stand-in for a Pinecone Index used by tests.
+
+    Filters use exact-equality across all top-level filter keys (the subset of
+    Pinecone's filter semantics we actually use in production code). Similarity
+    isn't computed — matches are returned in insertion order, which is fine
+    because our tests check filter behavior, not retrieval quality.
+    """
+
+    def __init__(self) -> None:
+        self.vectors: Dict[str, Dict] = {}
+
+    def upsert(self, vectors: List[Dict]) -> None:
+        for v in vectors:
+            self.vectors[v['id']] = v
+
+    def query(self, vector, top_k, filter, include_metadata):
+        candidates = list(self.vectors.values())
+        if filter:
+            candidates = [
+                v for v in candidates
+                if all(v.get('metadata', {}).get(k) == val for k, val in filter.items())
+            ]
+        return SimpleNamespace(matches=[
+            SimpleNamespace(id=v['id'], score=1.0, metadata=v.get('metadata'))
+            for v in candidates[:top_k]
+        ])
+
+    def delete(self, ids: List[str]) -> None:
+        for i in ids:
+            self.vectors.pop(i, None)
+
+    def count(self) -> int:
+        """Test helper — not part of Pinecone's API."""
+        return len(self.vectors)
 
 
 @pytest.fixture
 def fresh_collection(monkeypatch):
     """
-    Replace the module-level collection with an isolated in-memory one.
-    Uses a unique collection name per test because chromadb.Client() reuses
-    cached collection state under the same name across fixture instantiations.
+    Replace the module-level Pinecone index with an in-memory fake, and stub
+    _embed so tests don't need a real Voyage API key. Filter logic is what
+    matters for these tests; embedding quality is irrelevant.
 
-    Also stubs vector_service._embed so tests don't need a real Voyage API
-    key — we're testing filter logic, not embedding quality.
+    Named `fresh_collection` to keep test code unchanged from the ChromaDB era.
     """
-    client = chromadb.Client()
-    name = f'test_{uuid.uuid4().hex}'
-    collection = client.get_or_create_collection(name=name)
-    monkeypatch.setattr(vector_service, 'collection', collection)
+    fake = FakeIndex()
+    monkeypatch.setattr(vector_service, '_index', fake)
 
     def fake_embed(texts, input_type):
-        # Distinct deterministic vector per text so ChromaDB accepts them as
-        # unique points. Quality doesn't matter — filter logic is what we test.
-        return [[float((hash(t) + i) % 1000) / 1000 for i in range(384)] for t in texts]
+        # Distinct deterministic vector per text. Quality doesn't matter.
+        return [[float((hash(t) + i) % 1000) / 1000 for i in range(512)] for t in texts]
 
     monkeypatch.setattr(vector_service, '_embed', fake_embed)
-
-    yield collection
-    try:
-        client.delete_collection(name=name)
-    except Exception:
-        pass
+    yield fake
 
 
 def make_chunk(*, user_id, file_id, chunk_index, folder_id, text):
