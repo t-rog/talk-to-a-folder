@@ -30,8 +30,10 @@ else:
     _log(f"voyage client ready, model={_voyage_model}")
 
 client = chromadb.PersistentClient(path=_chroma_path)
-# No embedding_function — we supply embeddings ourselves on every call.
-collection = client.get_or_create_collection(name="my_collection")
+# Bumped the name to force a fresh collection — the previous "my_collection"
+# was created with a stored embedder reference that put ChromaDB into a bad
+# state. No embedding_function passed; we supply embeddings ourselves.
+collection = client.get_or_create_collection(name="documents_v2")
 _log(f"collection ready at {_chroma_path}")
 
 
