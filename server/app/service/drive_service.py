@@ -116,6 +116,17 @@ def chunk_text(text: str, chunk_size: int = 500, overlap: int = 50) -> List[str]
     return chunks
 
 
+def get_folder_name(folder_id: str, credentials_dict: Dict) -> Optional[str]:
+    """Fetch the human-readable name of a Drive folder. Returns None on failure."""
+    try:
+        service = _build_drive_service(credentials_dict)
+        meta = service.files().get(fileId=folder_id, fields='name').execute()
+        return meta.get('name')
+    except Exception as e:
+        logger.error(f"Error fetching folder name {folder_id}: {e}")
+        return None
+
+
 def get_folder_files(folder_id: str, credentials_dict: Dict) -> List[Dict]:
     """List all files in a Google Drive folder."""
     try:
@@ -185,6 +196,9 @@ def process_folder(folder_url_or_id: str, credentials_dict: Dict) -> Dict:
         t0 = time.time()
         folder_id = _extract_folder_id(folder_url_or_id)
         _log(f"START process_folder folder_id={folder_id}")
+
+        folder_name = get_folder_name(folder_id, credentials_dict)
+        _log(f"folder_name={folder_name!r}")
 
         # Get list of files (exclude subfolders)
         t_list = time.time()
@@ -262,6 +276,7 @@ def process_folder(folder_url_or_id: str, credentials_dict: Dict) -> Dict:
         return {
             'status': 'success',
             'folder_id': folder_id,
+            'folder_name': folder_name,
             'file_count': processed_count,
             'chunk_count': len(all_chunks),
             'chunks': all_chunks,

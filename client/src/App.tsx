@@ -175,7 +175,7 @@ function AppInner() {
           console.log('Folder processed:', data);
           const apiFiles: ApiFile[] = data.files || [];
           setFolder({
-            label: deriveName(customUrl),
+            label: data.folder_name || deriveName(customUrl),
             owner: user?.name || 'You',
             members: 1,
             url: customUrl,
