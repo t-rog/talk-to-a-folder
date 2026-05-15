@@ -29,7 +29,10 @@ else:
     _voyage = voyageai.Client(api_key=_voyage_key)
     _log(f"voyage client ready, model={_voyage_model}")
 
-client = chromadb.PersistentClient(path=_chroma_path)
+client = chromadb.PersistentClient(
+    path=_chroma_path,
+    settings=chromadb.Settings(anonymized_telemetry=False),
+)
 # Bumped the name to force a fresh collection — the previous "my_collection"
 # was created with a stored embedder reference that put ChromaDB into a bad
 # state. No embedding_function passed; we supply embeddings ourselves.
