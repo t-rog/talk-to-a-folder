@@ -146,6 +146,20 @@
     border-color: color-mix(in oklch, var(--accent) 30%, var(--line));
     background: color-mix(in oklch, var(--accent-soft) 60%, var(--bg));
   }
+
+  &[data-state="error"] {
+    border-style: solid;
+    border-color: oklch(70% 0.13 25);
+    background: oklch(96% 0.03 25);
+
+    strong {
+      color: oklch(45% 0.16 25);
+    }
+
+    span {
+      color: oklch(50% 0.12 25);
+    }
+  }
 }
 
 .urlpanel-status-dot {
@@ -164,6 +178,11 @@
   .urlpanel-status[data-state="scanning"] & {
     background: var(--accent);
     animation: pulse 1.4s infinite;
+  }
+
+  .urlpanel-status[data-state="error"] & {
+    background: oklch(60% 0.18 25);
+    box-shadow: 0 0 0 3px oklch(60% 0.18 25 / 22%);
   }
 }
 

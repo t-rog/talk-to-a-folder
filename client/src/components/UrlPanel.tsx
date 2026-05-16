@@ -22,7 +22,13 @@ export function UrlPanel({ phase, folder, urlInput, setUrlInput, onConnect, onSa
     onConnect(urlInput.trim());
   };
 
-  const statusState = phase === 'connected' ? 'connected' : phase === 'scanning' ? 'scanning' : 'idle';
+  const statusState = errorMessage
+    ? 'error'
+    : phase === 'connected'
+      ? 'connected'
+      : phase === 'scanning'
+        ? 'scanning'
+        : 'idle';
 
   return (
     <section className="panel">
