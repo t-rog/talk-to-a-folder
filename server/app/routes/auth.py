@@ -107,7 +107,7 @@ def chat():
 
     # Always scope retrieval to the authenticated user. folder_id narrows further.
     relevant_chunks = vector_service.query_with_metadata(
-        message, n_results=5, user_id=user['id'], folder_id=folder_id
+        message, n_results=3, user_id=user['id'], folder_id=folder_id
     )
 
     # Build document context from retrieved chunks

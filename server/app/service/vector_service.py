@@ -2,11 +2,33 @@ import os
 import time
 import voyageai
 from pinecone import Pinecone
-from typing import List, Dict, Tuple, Optional
+from typing import Any, Callable, List, Dict, Tuple, Optional
 
 
 def _log(msg: str) -> None:
     print(f"[vector] {msg}", flush=True)
+
+
+def _with_retry(fn: Callable[[], Any], attempts: int = 3, base_delay: float = 0.5) -> Any:
+    """
+    Retry a callable with exponential backoff. Covers transient failures from
+    external APIs (Voyage, Pinecone): network blips, 429 rate limits, 503s.
+    Doesn't distinguish retryable from non-retryable errors — at our scale,
+    blanket retry is fine; a permanent error fails fast on its own (3 retries
+    in under 4 seconds).
+    """
+    last_exc: Optional[Exception] = None
+    for i in range(attempts):
+        try:
+            return fn()
+        except Exception as e:
+            last_exc = e
+            if i < attempts - 1:
+                delay = base_delay * (2 ** i)
+                _log(f"retry {i + 1}/{attempts} after {type(e).__name__}: {e} (sleep {delay}s)")
+                time.sleep(delay)
+    assert last_exc is not None
+    raise last_exc
 
 
 # ── Voyage AI (embeddings) ───────────────────────────────────────────────────
@@ -38,18 +60,25 @@ def _embed(texts: List[str], input_type: str) -> List[List[float]]:
     """
     Embed a list of texts via Voyage. input_type must be 'document' or 'query';
     Voyage uses different embeddings for each to improve retrieval quality.
+    Retries with exponential backoff on transient failures.
     """
     if _voyage is None:
         raise RuntimeError("VOYAGE_API_KEY is not set; cannot embed")
     t = time.time()
-    result = _voyage.embed(texts, model=_voyage_model, input_type=input_type)
+    result = _with_retry(lambda: _voyage.embed(texts, model=_voyage_model, input_type=input_type))
     _log(f"  voyage.embed({input_type}, {len(texts)} items) took {time.time() - t:.2f}s")
     return result.embeddings
 
 
+# Cosine similarity threshold below which a retrieved chunk is considered
+# irrelevant and dropped before being passed to the LLM. Tune via env var if
+# retrieval quality feels off — lower (0.3) for recall, higher (0.5) for precision.
+SCORE_THRESHOLD = float(os.environ.get('VECTOR_SCORE_THRESHOLD', '0.4'))
+
+
 def query_with_metadata(
     query: str,
-    n_results: int = 5,
+    n_results: int = 3,
     user_id: Optional[str] = None,
     folder_id: Optional[str] = None,
 ) -> List[Tuple[str, Dict]]:
@@ -58,6 +87,10 @@ def query_with_metadata(
     `user_id` is required in production to prevent cross-user data leaks; when
     omitted, the query is unscoped (use only for trusted internal callers).
     `folder_id` further narrows to a single folder within the user's chunks.
+
+    Chunks below SCORE_THRESHOLD are dropped — Pinecone's top_k always returns
+    n_results matches regardless of relevance, so without this filter we'd
+    feed Claude irrelevant text for off-topic queries.
     """
     if _index is None:
         raise RuntimeError("Pinecone is not configured")
@@ -69,22 +102,30 @@ def query_with_metadata(
     if folder_id:
         pinecone_filter['folder_id'] = folder_id
 
-    _log(f"query START, filter={pinecone_filter}")
+    _log(f"query START, filter={pinecone_filter}, top_k={n_results}, threshold={SCORE_THRESHOLD}")
     t = time.time()
     query_embedding = _embed([query], input_type='query')[0]
-    result = _index.query(
+    result = _with_retry(lambda: _index.query(
         vector=query_embedding,
         top_k=n_results,
         filter=pinecone_filter if pinecone_filter else None,
         include_metadata=True,
-    )
-    _log(f"query END, {time.time() - t:.2f}s, {len(result.matches)} matches")
+    ))
+    _log(f"query END, {time.time() - t:.2f}s, {len(result.matches)} matches raw")
 
     pairs: List[Tuple[str, Dict]] = []
+    dropped = 0
     for match in result.matches:
+        score = getattr(match, 'score', 0.0) or 0.0
+        kept = score >= SCORE_THRESHOLD
+        _log(f"  match {match.id} score={score:.3f} {'KEEP' if kept else 'DROP'}")
+        if not kept:
+            dropped += 1
+            continue
         meta = dict(match.metadata or {})
         text = meta.pop('text', '')
         pairs.append((text, meta))
+    _log(f"query result: {len(pairs)} kept, {dropped} dropped (threshold={SCORE_THRESHOLD})")
     return pairs
 
 
@@ -117,7 +158,7 @@ def batch_add_vectors(chunks_with_metadata: List[Dict]) -> List[str]:
             'metadata': meta,
         })
 
-    _index.upsert(vectors=vectors)
+    _with_retry(lambda: _index.upsert(vectors=vectors))
     _log(f"upsert END, {time.time() - t:.2f}s")
     return ids
 
