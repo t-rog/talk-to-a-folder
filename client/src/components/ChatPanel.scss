@@ -72,6 +72,25 @@
   color: var(--ink-2);
 }
 
+.bubble-sources {
+  font-size: 0.85em;
+  margin-top: 0.5em;
+  color: var(--ink-2);
+
+  .source-link {
+    color: inherit;
+    text-decoration: underline;
+    text-decoration-color: var(--line);
+    text-underline-offset: 2px;
+    transition: color 0.15s, text-decoration-color 0.15s;
+
+    &:hover {
+      color: var(--ink);
+      text-decoration-color: var(--ink);
+    }
+  }
+}
+
 .bubble-user {
   align-self: flex-end;
 

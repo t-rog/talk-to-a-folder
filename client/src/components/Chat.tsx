@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo, FormEvent, KeyboardEvent } from 'react';
+import { Fragment, useState, useEffect, useRef, useMemo, FormEvent, KeyboardEvent } from 'react';
 import { FolderData, buildContext, buildSuggestions, summarize } from '../lib/folderData';
 import { apiUrl } from '../lib/api';
 
@@ -28,12 +28,36 @@ function openingLine(folder: FolderData, summary: ReturnType<typeof summarize>):
 }
 
 function Bubble({ role, hint, children, sources }: { role: string; hint?: boolean; sources?: Source[]; children: React.ReactNode }) {
+  // Dedupe sources by file_id — multiple chunks from one file → one link.
+  const uniqueSources = useMemo(() => {
+    if (!sources) return [];
+    const seen = new Set<string>();
+    return sources.filter((s) => {
+      if (seen.has(s.file_id)) return false;
+      seen.add(s.file_id);
+      return true;
+    });
+  }, [sources]);
+
   return (
     <div className={`bubble bubble-${role} ${hint ? 'bubble-hint' : ''}`}>
       <div className="bubble-text">{children}</div>
-      {sources && sources.length > 0 && (
-        <div style={{ fontSize: '0.85em', marginTop: '0.5em', opacity: 0.7 }}>
-          <strong>Sources:</strong> {sources.map((s) => s.file_name).join(', ')}
+      {uniqueSources.length > 0 && (
+        <div className="bubble-sources">
+          <strong>Sources:</strong>{' '}
+          {uniqueSources.map((s, i) => (
+            <Fragment key={s.file_id}>
+              {i > 0 && ', '}
+              <a
+                href={`https://drive.google.com/file/d/${s.file_id}/view`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="source-link"
+              >
+                {s.file_name}
+              </a>
+            </Fragment>
+          ))}
         </div>
       )}
     </div>
