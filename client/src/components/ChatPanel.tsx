@@ -6,10 +6,9 @@ import './ChatPanel.scss';
 interface Props {
   phase: Phase;
   folder: FolderData | null;
-  agentName: string;
 }
 
-export function ChatPanel({ phase, folder, agentName }: Props) {
+export function ChatPanel({ phase, folder }: Props) {
   return (
     <section className="panel">
       <div className="panel-hd">
@@ -17,10 +16,10 @@ export function ChatPanel({ phase, folder, agentName }: Props) {
           <span className="panel-eyebrow-num">3</span>
           <span>Ask the agent</span>
         </div>
-        <h2 className="panel-title">{agentName} chat</h2>
+        <h2 className="panel-title">Folder chat</h2>
       </div>
       {phase === 'connected' && folder
-        ? <Chat folder={folder} agentName={agentName} />
+        ? <Chat folder={folder} />
         : (
           <div className="chat-empty">
             <div className="chat-empty-title">

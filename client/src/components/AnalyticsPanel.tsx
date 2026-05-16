@@ -4,15 +4,9 @@ import { FolderData, FileEntry, TypeCategory, summarize, fmtSize, categorize } f
 import { TypeGlyph } from './TypeGlyph';
 import './AnalyticsPanel.scss';
 
-interface Tweaks {
-  vis: string;
-  showSizes: boolean;
-}
-
 interface Props {
   phase: Phase;
   folder: FolderData | null;
-  tweaks: Tweaks;
 }
 
 function Stat({ label, value }: { label: string; value: string | number }) {
@@ -24,7 +18,7 @@ function Stat({ label, value }: { label: string; value: string | number }) {
   );
 }
 
-function CardsView({ summary, total, showSizes }: { summary: TypeCategory[]; total: number; showSizes: boolean }) {
+function CardsView({ summary, total }: { summary: TypeCategory[]; total: number }) {
   return (
     <div className="cards">
       {summary.map((t, i) => (
@@ -32,7 +26,7 @@ function CardsView({ summary, total, showSizes }: { summary: TypeCategory[]; tot
           <div className="card-icon"><TypeGlyph id={t.id} /></div>
           <div className="card-count">{t.files.length}</div>
           <div className="card-label">{t.label}</div>
-          {showSizes && <div className="card-size">{fmtSize(t.totalMB)}</div>}
+          <div className="card-size">{fmtSize(t.totalMB)}</div>
           <div className="card-bar">
             <span style={{ width: `${(t.files.length / total) * 100}%` }} />
           </div>
@@ -45,65 +39,6 @@ function CardsView({ summary, total, showSizes }: { summary: TypeCategory[]; tot
       ))}
     </div>
   );
-}
-
-function BarsView({ summary, showSizes }: { summary: TypeCategory[]; showSizes: boolean }) {
-  const max = Math.max(...summary.map((t) => t.files.length));
-  return (
-    <div className="bars">
-      {summary.map((t) => (
-        <div key={t.id} className="bar-row">
-          <div className="bar-icon"><TypeGlyph id={t.id} /></div>
-          <div className="bar-label">{t.label}</div>
-          <div className="bar-track">
-            <span className="bar-fill" style={{ width: `${(t.files.length / max) * 100}%` }} />
-            <span className="bar-count">{t.files.length}</span>
-          </div>
-          {showSizes && <div className="bar-size">{fmtSize(t.totalMB)}</div>}
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function ListView({ summary, total, showSizes }: { summary: TypeCategory[]; total: number; showSizes: boolean }) {
-  return (
-    <table className="list">
-      <thead>
-        <tr>
-          <th>Type</th>
-          <th>Count</th>
-          <th>Share</th>
-          {showSizes && <th>Size</th>}
-          <th>Extensions</th>
-        </tr>
-      </thead>
-      <tbody>
-        {summary.map((t) => (
-          <tr key={t.id}>
-            <td className="list-type">
-              <TypeGlyph id={t.id} />
-              <span>{t.label}</span>
-            </td>
-            <td className="num">{t.files.length}</td>
-            <td className="num">{((t.files.length / total) * 100).toFixed(0)}%</td>
-            {showSizes && <td className="num">{fmtSize(t.totalMB)}</td>}
-            <td className="list-exts">
-              {[...new Set(t.files.map((f) => f.ext))].map((e) => (
-                <span key={e} className="ext-pill">.{e}</span>
-              ))}
-            </td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
-  );
-}
-
-function BreakdownView({ summary, total, tweaks }: { summary: TypeCategory[]; total: number; tweaks: Tweaks }) {
-  if (tweaks.vis === 'bars') return <BarsView summary={summary} showSizes={tweaks.showSizes} />;
-  if (tweaks.vis === 'list') return <ListView summary={summary} total={total} showSizes={tweaks.showSizes} />;
-  return <CardsView summary={summary} total={total} showSizes={tweaks.showSizes} />;
 }
 
 function RecentList({ files }: { files: FileEntry[] }) {
@@ -129,7 +64,7 @@ function RecentList({ files }: { files: FileEntry[] }) {
   );
 }
 
-export function AnalyticsPanel({ phase, folder, tweaks }: Props) {
+export function AnalyticsPanel({ phase, folder }: Props) {
   const summary = useMemo(() => folder ? summarize(folder.files) : [], [folder]);
   const totalMB = useMemo(() => folder ? folder.files.reduce((s, f) => s + f.sizeMB, 0) : 0, [folder]);
 
@@ -176,7 +111,7 @@ export function AnalyticsPanel({ phase, folder, tweaks }: Props) {
             <Stat label="Members" value={folder.members} />
           </div>
           <div className="panel-body">
-            <BreakdownView summary={summary} total={folder.files.length} tweaks={tweaks} />
+            <CardsView summary={summary} total={folder.files.length} />
             <RecentList files={folder.files} />
           </div>
         </>

@@ -17,7 +17,6 @@ interface Message {
 
 interface Props {
   folder: FolderData;
-  agentName: string;
 }
 
 function openingLine(folder: FolderData, summary: ReturnType<typeof summarize>): string {
@@ -41,7 +40,7 @@ function Bubble({ role, hint, children, sources }: { role: string; hint?: boolea
   );
 }
 
-export function Chat({ folder, agentName }: Props) {
+export function Chat({ folder }: Props) {
   const summary = useMemo(() => summarize(folder.files), [folder.files]);
   const folderContext = useMemo(() => buildContext(folder, summary), [folder, summary]);
   const suggestions = useMemo(() => buildSuggestions(summary), [summary]);
@@ -119,7 +118,7 @@ export function Chat({ folder, agentName }: Props) {
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder={`Ask ${agentName} about this folder…`}
+          placeholder="Ask Folder about this folder…"
         />
         <button type="submit" className="send" disabled={!draft.trim() || busy} aria-label="Send">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"

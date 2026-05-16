@@ -4,14 +4,6 @@ import { Header } from './components/Header';
 import { UrlPanel } from './components/UrlPanel';
 import { AnalyticsPanel } from './components/AnalyticsPanel';
 import { ChatPanel } from './components/ChatPanel';
-import {
-  TweaksPanel,
-  TweakSection,
-  TweakRadio,
-  TweakToggle,
-  TweakText,
-  useTweaks,
-} from './components/TweaksPanel';
 import { SAMPLE_FOLDERS, FolderData, FileEntry } from './lib/folderData';
 import { apiUrl } from './lib/api';
 
@@ -49,13 +41,6 @@ function apiFileToEntry(f: ApiFile): FileEntry {
 }
 
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
-
-const TWEAK_DEFAULTS = {
-  theme: 'cream',
-  vis: 'cards',
-  showSizes: true,
-  agentName: 'Folder',
-};
 
 export type Phase = 'empty' | 'scanning' | 'connected';
 
@@ -97,7 +82,6 @@ function makeInitials(name: string): string {
 }
 
 function AppInner() {
-  const [t, setTweak] = useTweaks(TWEAK_DEFAULTS);
   const [user, setUser] = useState<UserInfo | null>(null);
   const [signedIn, setSignedIn] = useState(false);
   const [phase, setPhase] = useState<Phase>('empty');
@@ -203,7 +187,7 @@ function AppInner() {
   };
 
   return (
-    <div className="app" data-theme={t.theme}>
+    <div className="app" data-theme="cream">
       <Header
         signedIn={signedIn}
         user={user}
@@ -221,25 +205,9 @@ function AppInner() {
           onDisconnect={disconnect}
           signedIn={signedIn}
         />
-        <AnalyticsPanel phase={phase} folder={folder} tweaks={t} />
-        <ChatPanel phase={phase} folder={folder} agentName={t.agentName} />
+        <AnalyticsPanel phase={phase} folder={folder} />
+        <ChatPanel phase={phase} folder={folder} />
       </div>
-      <TweaksPanel>
-        <TweakSection label="Theme">
-          <TweakRadio label="Palette" value={t.theme} options={['cream', 'slate', 'mono']}
-                      onChange={(v) => setTweak('theme', v)} />
-        </TweakSection>
-        <TweakSection label="Analytics">
-          <TweakRadio label="Layout" value={t.vis} options={['cards', 'bars', 'list']}
-                      onChange={(v) => setTweak('vis', v)} />
-          <TweakToggle label="Show sizes" value={t.showSizes as boolean}
-                       onChange={(v) => setTweak('showSizes', v)} />
-        </TweakSection>
-        <TweakSection label="Chat">
-          <TweakText label="Agent name" value={t.agentName as string}
-                     onChange={(v) => setTweak('agentName', v)} />
-        </TweakSection>
-      </TweaksPanel>
     </div>
   );
 }

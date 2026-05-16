@@ -8,6 +8,7 @@ from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload
 from google.oauth2.credentials import Credentials
 from docx import Document
+from pptx import Presentation
 
 
 def _log(msg: str) -> None:
@@ -71,11 +72,42 @@ def extract_markdown_text(file_path: str) -> str:
         return ''
 
 
+def extract_pptx_text(file_path: str) -> str:
+    """
+    Extract slide text + speaker notes from a .pptx file.
+    Slides are tagged with [Slide N] and notes with [Notes] so the LLM can
+    cite specific slides on retrieval.
+    """
+    try:
+        prs = Presentation(file_path)
+        slide_blocks: List[str] = []
+        for idx, slide in enumerate(prs.slides, start=1):
+            lines: List[str] = [f"[Slide {idx}]"]
+            for shape in slide.shapes:
+                if shape.has_text_frame:
+                    for para in shape.text_frame.paragraphs:
+                        text = para.text.strip()
+                        if text:
+                            lines.append(text)
+            if slide.has_notes_slide:
+                notes = slide.notes_slide.notes_text_frame.text.strip()
+                if notes:
+                    lines.append(f"[Notes] {notes}")
+            slide_blocks.append('\n'.join(lines))
+        return '\n\n'.join(slide_blocks)
+    except Exception as e:
+        logger.error(f"Error extracting PPTX from {file_path}: {e}")
+        return ''
+
+
+PPTX_MIME = 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
+
 # Extractor registry: MIME type -> extraction function.
 # Keyed by the *effective* MIME type after any export.
 EXTRACTORS = {
     'application/vnd.openxmlformats-officedocument.wordprocessingml.document': extract_docx_text,
     'text/markdown': extract_markdown_text,
+    PPTX_MIME: extract_pptx_text,
 }
 
 # Google native MIME types are not downloadable directly; they must be exported
@@ -83,6 +115,7 @@ EXTRACTORS = {
 # export it as, which must match a key in EXTRACTORS.
 GOOGLE_EXPORTS = {
     'application/vnd.google-apps.document': 'text/markdown',
+    'application/vnd.google-apps.presentation': PPTX_MIME,
 }
 
 
