@@ -12,9 +12,10 @@ interface Props {
   onSample: (key: string) => void;
   onDisconnect: () => void;
   signedIn: boolean;
+  errorMessage?: string | null;
 }
 
-export function UrlPanel({ phase, folder, urlInput, setUrlInput, onConnect, onSample: _onSample, onDisconnect, signedIn }: Props) {
+export function UrlPanel({ phase, folder, urlInput, setUrlInput, onConnect, onSample: _onSample, onDisconnect, signedIn, errorMessage }: Props) {
   const submit = (e: FormEvent) => {
     e.preventDefault();
     if (!urlInput.trim() || !signedIn) return;
@@ -80,10 +81,16 @@ export function UrlPanel({ phase, folder, urlInput, setUrlInput, onConnect, onSa
                 <span>Sign in with Google to connect a folder.</span>
               </>
             )}
-            {signedIn && phase === 'empty' && (
+            {signedIn && phase === 'empty' && !errorMessage && (
               <>
                 <strong>No folder connected</strong>
                 <span>Paste a Drive URL or pick a sample.</span>
+              </>
+            )}
+            {signedIn && phase === 'empty' && errorMessage && (
+              <>
+                <strong>Couldn't connect</strong>
+                <span>{errorMessage}</span>
               </>
             )}
             {signedIn && phase === 'scanning' && (

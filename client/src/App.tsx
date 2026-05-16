@@ -87,6 +87,7 @@ function AppInner() {
   const [phase, setPhase] = useState<Phase>('empty');
   const [folder, setFolder] = useState<FolderData | null>(null);
   const [urlInput, setUrlInput] = useState('');
+  const [connectError, setConnectError] = useState<string | null>(null);
 
   // Check existing session on mount; restore active folder from localStorage if any
   useEffect(() => {
@@ -145,15 +146,20 @@ function AppInner() {
       setFolder({ label: deriveName(customUrl), owner: user?.name || 'You', members: 1, url: customUrl, files: [] });
       setPhase('scanning');
 
+      setConnectError(null);
       fetch(apiUrl('/api/drive/process-folder'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
         body: JSON.stringify({ folder_url: customUrl }),
       })
-        .then((res) => {
-          if (res.ok) return res.json();
-          throw new Error(`HTTP ${res.status}`);
+        .then(async (res) => {
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) {
+            const msg = data?.message || `Couldn't process folder (HTTP ${res.status}).`;
+            throw new Error(msg);
+          }
+          return data;
         })
         .then((data) => {
           console.log('Folder processed:', data);
@@ -165,12 +171,21 @@ function AppInner() {
             url: customUrl,
             files: apiFiles.map(apiFileToEntry),
             folderId: data.folder_id,
+            skippedFiles: data.skipped_files || [],
+            unsupportedFileCount: data.unsupported_file_count || 0,
+            subfolderCount: data.subfolder_count || 0,
+            indexedFileCount: data.file_count || 0,
           });
           setPhase('connected');
         })
         .catch((err) => {
           console.error('Folder processing failed:', err);
-          setPhase('connected');
+          setConnectError(
+            err?.message ||
+              "Network error while indexing. The folder may have completed processing; try Disconnect and reconnect to verify."
+          );
+          setPhase('empty');
+          setFolder(null);
         });
     } else {
       // Sample folder — pure mock for demo
@@ -184,6 +199,7 @@ function AppInner() {
     setPhase('empty');
     setFolder(null);
     setUrlInput('');
+    setConnectError(null);
   };
 
   return (
@@ -204,6 +220,7 @@ function AppInner() {
           onSample={connect}
           onDisconnect={disconnect}
           signedIn={signedIn}
+          errorMessage={connectError}
         />
         <AnalyticsPanel phase={phase} folder={folder} />
         <ChatPanel phase={phase} folder={folder} />

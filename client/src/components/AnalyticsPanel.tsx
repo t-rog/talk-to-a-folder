@@ -64,6 +64,37 @@ function RecentList({ files }: { files: FileEntry[] }) {
   );
 }
 
+function Notes({ folder }: { folder: FolderData }) {
+  const notes: string[] = [];
+  const indexed = folder.indexedFileCount ?? 0;
+  const skipped = folder.skippedFiles ?? [];
+  const unsupported = folder.unsupportedFileCount ?? 0;
+  const subfolders = folder.subfolderCount ?? 0;
+
+  if (indexed === 0 && folder.files.length > 0) {
+    notes.push(
+      `None of these ${folder.files.length} files could be indexed for search. Supported formats: Google Docs, Google Slides, .docx, .pptx.`,
+    );
+  } else if (unsupported > 0) {
+    notes.push(`${unsupported} file${unsupported === 1 ? '' : 's'} skipped (unsupported format).`);
+  }
+  if (skipped.length > 0) {
+    const names = skipped.slice(0, 3).map((s) => s.name).join(', ');
+    const more = skipped.length > 3 ? ` (+${skipped.length - 3} more)` : '';
+    notes.push(`${skipped.length} file${skipped.length === 1 ? '' : 's'} had no extractable text: ${names}${more}.`);
+  }
+  if (subfolders > 0) {
+    notes.push(`Indexed contents from ${subfolders} subfolder${subfolders === 1 ? '' : 's'}.`);
+  }
+  if (notes.length === 0) return null;
+
+  return (
+    <ul className="analytics-notes">
+      {notes.map((n, i) => <li key={i}>{n}</li>)}
+    </ul>
+  );
+}
+
 export function AnalyticsPanel({ phase, folder }: Props) {
   const summary = useMemo(() => folder ? summarize(folder.files) : [], [folder]);
   const totalMB = useMemo(() => folder ? folder.files.reduce((s, f) => s + f.sizeMB, 0) : 0, [folder]);
@@ -102,6 +133,13 @@ export function AnalyticsPanel({ phase, folder }: Props) {
               : "Once you connect a folder on the left, you’ll see a breakdown of every file type here."}
           </p>
         </div>
+      ) : folder.files.length === 0 ? (
+        <div className="analytics-empty">
+          <h3 className="analytics-empty-title">This folder is empty</h3>
+          <p className="analytics-empty-sub">
+            No files were found in this Drive folder. Disconnect and connect a different one to get started.
+          </p>
+        </div>
       ) : (
         <>
           <div className="analytics-stats">
@@ -110,6 +148,7 @@ export function AnalyticsPanel({ phase, folder }: Props) {
             <Stat label="Owner" value={folder.owner} />
             <Stat label="Members" value={folder.members} />
           </div>
+          <Notes folder={folder} />
           <div className="panel-body">
             <CardsView summary={summary} total={folder.files.length} />
             <RecentList files={folder.files} />

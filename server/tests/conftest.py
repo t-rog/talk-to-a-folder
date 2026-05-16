@@ -56,8 +56,6 @@ def fresh_collection(monkeypatch):
     Replace the module-level Pinecone index with an in-memory fake, and stub
     _embed so tests don't need a real Voyage API key. Filter logic is what
     matters for these tests; embedding quality is irrelevant.
-
-    Named `fresh_collection` to keep test code unchanged from the ChromaDB era.
     """
     fake = FakeIndex()
     monkeypatch.setattr(vector_service, '_index', fake)

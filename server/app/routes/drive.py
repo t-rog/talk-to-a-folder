@@ -27,8 +27,14 @@ def process_folder():
         result = drive_service.process_folder(folder_url_or_id, credentials)
 
         if result['status'] == 'error':
-            logger.error(f"Folder processing failed: {result.get('error')}")
-            return jsonify(result), 400
+            code = result.get('error_code', 'unknown')
+            logger.error(f"Folder processing failed: {code} — {result.get('message')}")
+            http_status = {
+                'folder_not_found': 404,
+                'access_denied': 403,
+                'not_a_folder': 400,
+            }.get(code, 500)
+            return jsonify(result), http_status
 
         # Tag every chunk with the authenticated user_id before storing.
         # Required so queries can be scoped per-user and never leak across accounts.

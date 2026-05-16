@@ -5,6 +5,11 @@ export interface FileEntry {
   modifiedDays: number;
 }
 
+export interface SkippedFile {
+  name: string;
+  reason: string;
+}
+
 export interface FolderData {
   label: string;
   owner: string;
@@ -12,6 +17,10 @@ export interface FolderData {
   url: string;
   files: FileEntry[];
   folderId?: string;
+  skippedFiles?: SkippedFile[];
+  unsupportedFileCount?: number;
+  subfolderCount?: number;
+  indexedFileCount?: number;
 }
 
 export interface TypeCategory {
