@@ -57,9 +57,6 @@ function UserButton({ user, onSignOut }: { user: UserInfo; onSignOut: () => void
             </div>
           </div>
           <div className="user-menu-list">
-            <button className="user-menu-item">Manage Drive access</button>
-            <button className="user-menu-item">Conversation history</button>
-            <button className="user-menu-item">Settings</button>
             <button className="user-menu-item danger" onClick={onSignOut}>Sign out</button>
           </div>
         </div>
