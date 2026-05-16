@@ -5,10 +5,13 @@ import tempfile
 import logging
 from typing import Optional, Dict, List, Tuple
 from googleapiclient.discovery import build
+from googleapiclient.errors import HttpError
 from googleapiclient.http import MediaIoBaseDownload
 from google.oauth2.credentials import Credentials
 from docx import Document
 from pptx import Presentation
+from pypdf import PdfReader
+from openpyxl import load_workbook
 
 
 def _log(msg: str) -> None:
@@ -63,12 +66,48 @@ def extract_docx_text(file_path: str) -> str:
 
 
 def extract_markdown_text(file_path: str) -> str:
-    """Read a markdown (or any plain-text) file as-is."""
+    """
+    Read a text-based file (markdown, plain text, CSV, JSON, source code).
+    Uses errors='replace' so files with non-UTF-8 bytes (common in real-world
+    CSVs and old text files) still decode to *something* usable for retrieval.
+    """
     try:
-        with open(file_path, encoding='utf-8') as f:
+        with open(file_path, encoding='utf-8', errors='replace') as f:
             return f.read()
     except Exception as e:
         logger.error(f"Error reading text from {file_path}: {e}")
+        return ''
+
+
+def extract_pdf_text(file_path: str) -> str:
+    """Extract text from a PDF file. Returns empty for image-only/scanned PDFs."""
+    try:
+        reader = PdfReader(file_path)
+        pages = []
+        for i, page in enumerate(reader.pages, start=1):
+            page_text = page.extract_text() or ''
+            if page_text.strip():
+                pages.append(f"[Page {i}]\n{page_text}")
+        return '\n\n'.join(pages)
+    except Exception as e:
+        logger.error(f"Error extracting PDF from {file_path}: {e}")
+        return ''
+
+
+def extract_xlsx_text(file_path: str) -> str:
+    """Flatten every sheet's cells into 'col1 | col2 | col3' text rows for indexing."""
+    try:
+        wb = load_workbook(file_path, data_only=True, read_only=True)
+        blocks: List[str] = []
+        for sheet in wb.worksheets:
+            blocks.append(f"[Sheet: {sheet.title}]")
+            for row in sheet.iter_rows(values_only=True):
+                line = ' | '.join('' if c is None else str(c) for c in row)
+                if line.strip():
+                    blocks.append(line)
+        return '\n'.join(blocks)
+    except Exception as e:
+        logger.error(f"Error extracting XLSX from {file_path}: {e}")
         return ''
 
 
@@ -100,14 +139,45 @@ def extract_pptx_text(file_path: str) -> str:
         return ''
 
 
+DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
 PPTX_MIME = 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
+XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+PDF_MIME = 'application/pdf'
+
+# Plain-text-style formats — all use the same passthrough extractor.
+# Drive sometimes returns these MIME strings for source-code and config files.
+_PLAIN_TEXT_MIMES = [
+    'text/plain',
+    'text/markdown',
+    'text/csv',
+    'text/tab-separated-values',
+    'text/yaml',
+    'application/yaml',
+    'application/x-yaml',
+    'application/json',
+    'text/javascript',
+    'application/javascript',
+    'application/typescript',
+    'text/x-python',
+    'text/x-c',
+    'text/x-c++',
+    'text/x-java-source',
+    'text/x-go',
+    'text/x-rust',
+    'application/xml',
+    'text/xml',
+    'application/sql',
+    'text/x-sql',
+]
 
 # Extractor registry: MIME type -> extraction function.
 # Keyed by the *effective* MIME type after any export.
 EXTRACTORS = {
-    'application/vnd.openxmlformats-officedocument.wordprocessingml.document': extract_docx_text,
-    'text/markdown': extract_markdown_text,
+    DOCX_MIME: extract_docx_text,
     PPTX_MIME: extract_pptx_text,
+    XLSX_MIME: extract_xlsx_text,
+    PDF_MIME: extract_pdf_text,
+    **{mime: extract_markdown_text for mime in _PLAIN_TEXT_MIMES},
 }
 
 # Google native MIME types are not downloadable directly; they must be exported
@@ -116,6 +186,7 @@ EXTRACTORS = {
 GOOGLE_EXPORTS = {
     'application/vnd.google-apps.document': 'text/markdown',
     'application/vnd.google-apps.presentation': PPTX_MIME,
+    'application/vnd.google-apps.spreadsheet': 'text/csv',
 }
 
 
@@ -149,44 +220,80 @@ def chunk_text(text: str, chunk_size: int = 500, overlap: int = 50) -> List[str]
     return chunks
 
 
-def get_folder_name(folder_id: str, credentials_dict: Dict) -> Optional[str]:
-    """Fetch the human-readable name of a Drive folder. Returns None on failure."""
+class FolderAccessError(Exception):
+    """Raised when a folder is not found, not accessible, or not a folder."""
+    def __init__(self, code: str, message: str):
+        super().__init__(message)
+        self.code = code  # 'folder_not_found' | 'access_denied' | 'not_a_folder' | 'unknown'
+
+
+def get_folder_name(folder_id: str, credentials_dict: Dict) -> str:
+    """
+    Fetch the human-readable name of a Drive folder.
+    Raises FolderAccessError with a specific code on common failures.
+    """
     try:
         service = _build_drive_service(credentials_dict)
-        meta = service.files().get(fileId=folder_id, fields='name').execute()
-        return meta.get('name')
-    except Exception as e:
-        logger.error(f"Error fetching folder name {folder_id}: {e}")
-        return None
+        meta = service.files().get(fileId=folder_id, fields='name, mimeType').execute()
+    except HttpError as e:
+        status = e.resp.status if hasattr(e, 'resp') else None
+        if status == 404:
+            raise FolderAccessError('folder_not_found', "Folder not found. Check the URL.")
+        if status in (401, 403):
+            raise FolderAccessError('access_denied', "You don't have access to this folder.")
+        raise FolderAccessError('unknown', f"Drive API error ({status}).")
+    if meta.get('mimeType') != 'application/vnd.google-apps.folder':
+        raise FolderAccessError('not_a_folder', "That URL points to a file, not a folder.")
+    return meta.get('name') or 'Untitled folder'
 
 
 def get_folder_files(folder_id: str, credentials_dict: Dict) -> List[Dict]:
-    """List all files in a Google Drive folder."""
-    try:
-        service = _build_drive_service(credentials_dict)
+    """List immediate children of a Drive folder (one level only)."""
+    service = _build_drive_service(credentials_dict)
+    files: List[Dict] = []
+    page_token = None
+    while True:
+        results = service.files().list(
+            q=f"'{folder_id}' in parents and trashed=false",
+            spaces='drive',
+            fields='files(id, name, mimeType, size, modifiedTime), nextPageToken',
+            pageToken=page_token,
+            pageSize=100,
+        ).execute()
+        files.extend(results.get('files', []))
+        page_token = results.get('nextPageToken')
+        if not page_token:
+            break
+    return files
 
-        files = []
-        page_token = None
 
-        while True:
-            results = service.files().list(
-                q=f"'{folder_id}' in parents and trashed=false",
-                spaces='drive',
-                fields='files(id, name, mimeType, size, modifiedTime)',
-                pageToken=page_token,
-                pageSize=100,
-            ).execute()
+def traverse_folder(folder_id: str, credentials_dict: Dict, max_depth: int = 5) -> Tuple[List[Dict], int]:
+    """
+    Recursively walk a folder up to `max_depth` levels deep. Returns
+    (files, subfolder_count). Files are flat (no path tracking); subfolders are
+    counted only for surfacing "we walked into N subfolders" in the UI.
+    """
+    FOLDER_MIME = 'application/vnd.google-apps.folder'
+    all_files: List[Dict] = []
+    subfolder_count = 0
+    queue: List[Tuple[str, int]] = [(folder_id, 0)]
+    visited: set = set()
 
-            files.extend(results.get('files', []))
-            page_token = results.get('nextPageToken')
+    while queue:
+        current_id, depth = queue.pop(0)
+        if current_id in visited or depth > max_depth:
+            continue
+        visited.add(current_id)
 
-            if not page_token:
-                break
+        children = get_folder_files(current_id, credentials_dict)
+        for c in children:
+            if c.get('mimeType') == FOLDER_MIME:
+                subfolder_count += 1
+                queue.append((c['id'], depth + 1))
+            else:
+                all_files.append(c)
 
-        return files
-    except Exception as e:
-        logger.error(f"Error listing folder {folder_id}: {e}")
-        return []
+    return all_files, subfolder_count
 
 
 def download_file(file_id: str, credentials_dict: Dict, mime_type: str) -> Optional[Tuple[str, str]]:
@@ -222,34 +329,37 @@ def download_file(file_id: str, credentials_dict: Dict, mime_type: str) -> Optio
 
 def process_folder(folder_url_or_id: str, credentials_dict: Dict) -> Dict:
     """
-    Process a Google Drive folder: list files, download, extract text, chunk.
-    Returns dict with status, file_count, chunk_count, and list of chunks with metadata.
+    Process a Google Drive folder: list files (recursively), download supported
+    files, extract text, chunk. Returns a structured result with success/error
+    state, file count, chunk count, skipped files (with reasons), and
+    subfolder count. The caller is responsible for storing chunks downstream.
     """
     try:
         t0 = time.time()
         folder_id = _extract_folder_id(folder_url_or_id)
         _log(f"START process_folder folder_id={folder_id}")
 
-        folder_name = get_folder_name(folder_id, credentials_dict)
+        try:
+            folder_name = get_folder_name(folder_id, credentials_dict)
+        except FolderAccessError as e:
+            _log(f"folder access error: {e.code} — {e}")
+            return {'status': 'error', 'error_code': e.code, 'message': str(e)}
         _log(f"folder_name={folder_name!r}")
 
-        # Get list of files (exclude subfolders)
+        # Recursively gather files from this folder + all subfolders (up to max depth)
         t_list = time.time()
-        all_items = get_folder_files(folder_id, credentials_dict)
-        _log(f"list_files took {time.time() - t_list:.2f}s, got {len(all_items)} items")
+        files, subfolder_count = traverse_folder(folder_id, credentials_dict)
+        _log(f"traverse took {time.time() - t_list:.2f}s, {len(files)} files, {subfolder_count} subfolders")
 
-        files = [
-            f for f in all_items
-            if f.get('mimeType') != 'application/vnd.google-apps.folder'
-        ]
-        # Filter to MIME types we can extract directly OR export from Google native
         supported_files = [
             f for f in files
             if f.get('mimeType') in EXTRACTORS or f.get('mimeType') in GOOGLE_EXPORTS
         ]
-        _log(f"{len(files)} files, {len(supported_files)} supported")
+        unsupported_count = len(files) - len(supported_files)
+        _log(f"{len(supported_files)} supported, {unsupported_count} unsupported")
 
-        all_chunks = []
+        all_chunks: List[Dict] = []
+        skipped_files: List[Dict] = []
         processed_count = 0
 
         for file_info in supported_files:
@@ -258,27 +368,27 @@ def process_folder(folder_url_or_id: str, credentials_dict: Dict) -> Dict:
             mime_type = file_info['mimeType']
             _log(f"FILE start: {file_name} ({mime_type})")
 
-            # Download file (exports Google native types to a supported format)
             t_dl = time.time()
             download_result = download_file(file_id, credentials_dict, mime_type)
             _log(f"  download took {time.time() - t_dl:.2f}s")
             if not download_result:
                 _log(f"  SKIP: download failed")
+                skipped_files.append({'name': file_name, 'reason': 'download_failed'})
                 continue
             tmp_path, effective_mime = download_result
 
             try:
-                # Extract text using the effective MIME type (post-export)
                 t_ex = time.time()
                 text = extract_text(tmp_path, effective_mime)
                 _log(f"  extract took {time.time() - t_ex:.2f}s, {len(text)} chars")
                 if not text:
                     _log(f"  SKIP: no text")
+                    skipped_files.append({'name': file_name, 'reason': 'no_text'})
                     continue
 
                 text_chunks = chunk_text(text)
                 if not text_chunks:
-                    _log(f"  SKIP: no chunks")
+                    skipped_files.append({'name': file_name, 'reason': 'no_chunks'})
                     continue
 
                 for chunk_index, chunk_text_content in enumerate(text_chunks):
@@ -297,7 +407,6 @@ def process_folder(folder_url_or_id: str, credentials_dict: Dict) -> Dict:
                 _log(f"  FILE done: {len(text_chunks)} chunks")
 
             finally:
-                # Clean up temp file
                 try:
                     os.unlink(tmp_path)
                 except Exception as e:
@@ -313,6 +422,9 @@ def process_folder(folder_url_or_id: str, credentials_dict: Dict) -> Dict:
             'file_count': processed_count,
             'chunk_count': len(all_chunks),
             'chunks': all_chunks,
+            'skipped_files': skipped_files,
+            'unsupported_file_count': unsupported_count,
+            'subfolder_count': subfolder_count,
             'files': [
                 {
                     'name': f.get('name', ''),
@@ -326,7 +438,4 @@ def process_folder(folder_url_or_id: str, credentials_dict: Dict) -> Dict:
 
     except Exception as e:
         logger.error(f"Error processing folder {folder_url_or_id}: {e}")
-        return {
-            'status': 'error',
-            'error': str(e),
-        }
+        return {'status': 'error', 'error_code': 'unknown', 'message': str(e)}
