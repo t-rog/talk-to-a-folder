@@ -1,6 +1,9 @@
+"""Drive folder processing endpoint."""
 import logging
-from flask import Blueprint, request, jsonify, session
-from ..service import drive_service, vector_service
+
+from flask import Blueprint, jsonify, request, session
+
+from ..service import folder_processor, vector_store
 
 logger = logging.getLogger(__name__)
 bp = Blueprint('drive', __name__, url_prefix='/api/drive')
@@ -8,7 +11,7 @@ bp = Blueprint('drive', __name__, url_prefix='/api/drive')
 
 @bp.route('/process-folder', methods=['POST'])
 def process_folder():
-    """Process a Google Drive folder: list files, extract text, chunk, and store in vector DB."""
+    """Process a Drive folder: list files, extract text, chunk, and store in vector DB."""
     data = request.get_json(silent=True) or {}
     folder_url_or_id = data.get('folder_url', '').strip()
 
@@ -23,8 +26,7 @@ def process_folder():
     user_id = user['id']
 
     try:
-        # Process the folder
-        result = drive_service.process_folder(folder_url_or_id, credentials)
+        result = folder_processor.process_folder(folder_url_or_id, credentials)
 
         if result['status'] == 'error':
             code = result.get('error_code', 'unknown')
@@ -43,7 +45,7 @@ def process_folder():
             chunk['metadata']['user_id'] = user_id
 
         if chunks:
-            vector_result = vector_service.store_documents(chunks)
+            vector_result = vector_store.store_documents(chunks)
             result['vector_store_status'] = vector_result['status']
             result['chunks_indexed'] = vector_result['chunks_stored']
         else:

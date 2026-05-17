@@ -5,14 +5,13 @@ import { UrlPanel } from './components/UrlPanel';
 import { AnalyticsPanel } from './components/AnalyticsPanel';
 import { ChatPanel } from './components/ChatPanel';
 import { SAMPLE_FOLDERS, FolderData, FileEntry } from './lib/folderData';
-import { apiUrl } from './lib/api';
-
-interface ApiFile {
-  name: string;
-  mime_type: string;
-  size: number;
-  modified_time: string;
-}
+import {
+  type ApiFile,
+  getCurrentUser,
+  processFolder,
+  signInWithGoogle,
+  signOut,
+} from './api';
 
 // Google's native file types have no extension in their name (just "My Document"),
 // so map them to a recognizable short label by MIME type before falling back to
@@ -91,19 +90,15 @@ function AppInner() {
 
   // Check existing session on mount; restore active folder from localStorage if any
   useEffect(() => {
-    fetch(apiUrl('/api/auth/me'), { credentials: 'include' })
-      .then(async (res) => {
-        if (!res.ok) return;
-        const data = await res.json();
-        if (data.user) {
-          const u = data.user;
-          setUser({ id: u.id, name: u.name, email: u.email, initials: makeInitials(u.name) });
-          setSignedIn(true);
-          const saved = loadFolderForUser(u.id);
-          if (saved) {
-            setFolder(saved);
-            setPhase('connected');
-          }
+    getCurrentUser()
+      .then((u) => {
+        if (!u) return;
+        setUser({ id: u.id, name: u.name, email: u.email, initials: makeInitials(u.name) });
+        setSignedIn(true);
+        const saved = loadFolderForUser(u.id);
+        if (saved) {
+          setFolder(saved);
+          setPhase('connected');
         }
       })
       .catch(() => {});
@@ -118,24 +113,19 @@ function AppInner() {
     flow: 'auth-code',
     scope: 'openid email profile https://www.googleapis.com/auth/drive.readonly',
     onSuccess: async ({ code }) => {
-      const res = await fetch(apiUrl('/api/auth/google'), {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code }),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        const u = data.user;
+      try {
+        const u = await signInWithGoogle(code);
         setUser({ id: u.id, name: u.name, email: u.email, initials: makeInitials(u.name) });
         setSignedIn(true);
+      } catch (err) {
+        console.error('Google sign-in failed:', err);
       }
     },
     onError: () => console.error('Google login failed'),
   });
 
   const handleSignOut = async () => {
-    await fetch(apiUrl('/api/auth/logout'), { method: 'POST', credentials: 'include' }).catch(() => {});
+    await signOut().catch(() => {});
     setUser(null);
     setSignedIn(false);
     disconnect();
@@ -147,20 +137,7 @@ function AppInner() {
       setPhase('scanning');
 
       setConnectError(null);
-      fetch(apiUrl('/api/drive/process-folder'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ folder_url: customUrl }),
-      })
-        .then(async (res) => {
-          const data = await res.json().catch(() => ({}));
-          if (!res.ok) {
-            const msg = data?.message || `Couldn't process folder (HTTP ${res.status}).`;
-            throw new Error(msg);
-          }
-          return data;
-        })
+      processFolder(customUrl)
         .then((data) => {
           console.log('Folder processed:', data);
           const apiFiles: ApiFile[] = data.files || [];

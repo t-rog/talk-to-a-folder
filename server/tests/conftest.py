@@ -1,7 +1,7 @@
 """
 Shared test setup.
 
-vector_service initializes a real Pinecone client at import time if
+vector_store initializes a real Pinecone client at import time if
 PINECONE_API_KEY is set. To keep tests hermetic, the `fresh_collection`
 fixture swaps in an in-memory FakeIndex that mirrors Pinecone's API surface
 for upsert / query / delete with simple dict storage.
@@ -10,7 +10,7 @@ from types import SimpleNamespace
 from typing import Dict, List
 
 import pytest
-from app.service import vector_service
+from app.service import vector_store
 
 
 class FakeIndex:
@@ -58,13 +58,13 @@ def fresh_collection(monkeypatch):
     matters for these tests; embedding quality is irrelevant.
     """
     fake = FakeIndex()
-    monkeypatch.setattr(vector_service, '_index', fake)
+    monkeypatch.setattr(vector_store, '_index', fake)
 
     def fake_embed(texts, input_type):
         # Distinct deterministic vector per text. Quality doesn't matter.
         return [[float((hash(t) + i) % 1000) / 1000 for i in range(512)] for t in texts]
 
-    monkeypatch.setattr(vector_service, '_embed', fake_embed)
+    monkeypatch.setattr(vector_store, '_embed', fake_embed)
     yield fake
 
 
