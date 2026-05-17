@@ -41,43 +41,6 @@ export function UrlPanel({ phase, folder, urlInput, setUrlInput, onConnect, onSa
       </div>
 
       <div className="urlpanel-body">
-        <form className="urlpanel-input" onSubmit={submit}>
-          <span>https://</span>
-          <input
-            placeholder="drive.google.com/drive/folders/…"
-            value={urlInput}
-            onChange={(e) => setUrlInput(e.target.value)}
-            disabled={!signedIn}
-          />
-          <button type="submit" disabled={!urlInput.trim() || !signedIn || phase === 'scanning'}>
-            {phase === 'scanning' ? '…' : 'Go'}
-          </button>
-        </form>
-
-        {/* Sample folders UI temporarily disabled. Uncomment to restore demo mode.
-        <div>
-          <div className="urlpanel-section-h">Sample folders</div>
-          <div className="urlpanel-samples">
-            {Object.entries(SAMPLE_FOLDERS).map(([key, f]) => {
-              const totalMB = f.files.reduce((s, x) => s + x.sizeMB, 0);
-              return (
-                <button
-                  key={key}
-                  className="urlpanel-sample"
-                  onClick={() => onSample(key)}
-                  disabled={!signedIn}
-                >
-                  <div className="urlpanel-sample-name">{f.label}</div>
-                  <div className="urlpanel-sample-meta">
-                    {f.files.length} files · {fmtSize(totalMB)}
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-        */}
-
         <div className="urlpanel-status" data-state={statusState}>
           <span className="urlpanel-status-dot" />
           <div style={{ flex: 1, minWidth: 0 }}>
@@ -116,6 +79,43 @@ export function UrlPanel({ phase, folder, urlInput, setUrlInput, onConnect, onSa
             )}
           </div>
         </div>
+
+        <form className="urlpanel-input" onSubmit={submit}>
+          <span>https://</span>
+          <input
+            placeholder="drive.google.com/drive/folders/…"
+            value={urlInput}
+            onChange={(e) => setUrlInput(e.target.value)}
+            disabled={!signedIn}
+          />
+          <button type="submit" disabled={!urlInput.trim() || !signedIn || phase === 'scanning'}>
+            {phase === 'scanning' ? '…' : 'Go'}
+          </button>
+        </form>
+
+        {/* Sample folders UI temporarily disabled. Uncomment to restore demo mode.
+        <div>
+          <div className="urlpanel-section-h">Sample folders</div>
+          <div className="urlpanel-samples">
+            {Object.entries(SAMPLE_FOLDERS).map(([key, f]) => {
+              const totalMB = f.files.reduce((s, x) => s + x.sizeMB, 0);
+              return (
+                <button
+                  key={key}
+                  className="urlpanel-sample"
+                  onClick={() => onSample(key)}
+                  disabled={!signedIn}
+                >
+                  <div className="urlpanel-sample-name">{f.label}</div>
+                  <div className="urlpanel-sample-meta">
+                    {f.files.length} files · {fmtSize(totalMB)}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+        */}
       </div>
     </section>
   );

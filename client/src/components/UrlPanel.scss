@@ -107,28 +107,30 @@
 
 // ── Status indicator ──────────────────────────────────────────────────────────
 .urlpanel-status {
-  margin-top: auto;
-  padding: 12px;
+  margin-bottom: 4px;
+  padding: 16px 18px;
   background: var(--bg);
   border: 1px dashed var(--line);
   border-radius: 10px;
-  font-size: 12.5px;
+  font-size: 14px;
   color: var(--ink-2);
   display: flex;
   align-items: flex-start;
-  gap: 10px;
+  gap: 12px;
 
   strong {
     display: block;
     font-weight: 600;
+    font-size: 15px;
     color: var(--ink);
-    margin-bottom: 2px;
+    margin-bottom: 4px;
   }
 
   span {
-    font-size: 12px;
+    font-size: 13.5px;
     color: var(--ink-3);
     display: block;
+    line-height: 1.4;
   }
 
   code {
@@ -163,11 +165,11 @@
 }
 
 .urlpanel-status-dot {
-  width: 8px;
-  height: 8px;
+  width: 10px;
+  height: 10px;
   border-radius: 50%;
   background: var(--ink-3);
-  margin-top: 4px;
+  margin-top: 5px;
   flex-shrink: 0;
 
   .urlpanel-status[data-state="connected"] & {
